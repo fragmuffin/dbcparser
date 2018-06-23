@@ -28,21 +28,22 @@ class StreamParser(object):
 
     def iter(self):
         r"""
-        Generator that yields one _line_ each iteration.
+        Generator that yields one *line* each iteration.
 
         Before yielding, the stream is seeked to just after the ``\n`` denoting
         the end of the line.
+        This allows for nested parsing of the same stream.
 
         **Define "line"**
 
-        A line ends with a \n unless inside a string (``""``).
-        So technically a _dbc line_ may contain multiple lines.
+        A line ends with a ``\n`` unless it's inside a string (``""``).
+        So technically a *dbc line* may span over multiple lines.
 
-        **Escaped ``"`` character?**
+        **Escape character?**
 
-        Strings in a properly formatted dbc file _don't_ contain ``"``
-        characters. So no; a ``"`` character _cannot_ be escaped and used inside
-        a string.
+        Strings in a properly formatted dbc file *don't* contain ``"``
+        characters. So no; special characters *cannot* be escaped and used
+        inside a string.
         """
 
         chr_regex = re.compile(r'["\n]')  # match: quotes || new-line

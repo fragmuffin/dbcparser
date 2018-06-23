@@ -68,7 +68,7 @@ author = dbcparser.__author__
 # built documents.
 #
 # The full version, including alpha/beta/rc tags.
-release = unicode(dbcparser.__version__)
+release = dbcparser.__version__
 # The short X.Y version.
 version = u'.'.join(str(i) for i in LooseVersion(release).version[:2])
 
