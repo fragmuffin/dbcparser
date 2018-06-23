@@ -3,7 +3,8 @@ import io
 import mock
 
 # Objects under test
-from dbcparser.parser import StreamParser
+import dbcparser.parser
+
 
 class StreamParserTests(unittest.TestCase):
 
@@ -18,7 +19,7 @@ class StreamParserTests(unittest.TestCase):
             'last line has no newline char',
         ]
         stream = io.StringIO('\n'.join(lines))
-        p = StreamParser(stream)
+        p = dbcparser.parser.StreamParser(stream)
 
         self.assertEqual(
             [l.rstrip('\n') for l in p.iter()],
@@ -27,7 +28,7 @@ class StreamParserTests(unittest.TestCase):
 
     def test_empty_stream(self):
         stream = io.StringIO('')
-        p = StreamParser(stream)
+        p = dbcparser.parser.StreamParser(stream)
         self.assertEqual(list(p.iter()), [])
 
     @mock.patch('dbcparser.parser.CHUNK_SIZE', 1)
@@ -38,7 +39,7 @@ class StreamParserTests(unittest.TestCase):
             'line with "a string at the end"',
         ]
         stream = io.StringIO('\n'.join(lines))
-        p = StreamParser(stream)
+        p = dbcparser.parser.StreamParser(stream)
 
         self.assertEqual(
             [l.rstrip('\n') for l in p.iter()],
@@ -54,9 +55,15 @@ class StreamParserTests(unittest.TestCase):
             '',  # last line empty
         ]
         stream = io.StringIO('\n'.join(lines) + '\n')  # force newline char at EOF
-        p = StreamParser(stream)
+        p = dbcparser.parser.StreamParser(stream)
 
         self.assertEqual(
             [l.rstrip('\n') for l in p.iter()],
             lines,
         )
+
+    def test_unclosed_str(self):
+        stream = io.StringIO('foo "bar')
+        p = dbcparser.parser.StreamParser(stream)
+        with self.assertRaises(dbcparser.parser.DBCSyntaxError):
+            list(p.iter())

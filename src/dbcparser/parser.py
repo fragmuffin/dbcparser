@@ -63,10 +63,9 @@ class StreamParser(object):
                         string_state = not string_state
                     elif not string_state:  # == '\n'
                         # rewind stream to start of the next line
-                        self.stream.seek(
-                            self.stream.tell() - (len(chunk) - m.end())
-                        )
-                        line = line[:len(line) - (len(chunk) - m.end())]
+                        chunk_excess = len(chunk) - m.end()
+                        self.stream.seek(self.stream.tell() - chunk_excess)
+                        line = line[:len(line) - chunk_excess]
                         break  # will return line
                 else:
                     continue
@@ -74,6 +73,8 @@ class StreamParser(object):
 
             # return a line if there's something to return, otherwise EOF
             if line:
+                if string_state:  # still inside a string, line is invalid
+                    raise DBCSyntaxError("String was not closed before end of DBC line")
                 yield line
             else:
                 break
