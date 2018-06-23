@@ -18,3 +18,8 @@ __email__ = 'peter.boin+dbcparser@gmail.com'
 __license__ = 'MIT'
 
 __keywords__ = ['can', 'network', 'dbc']
+
+# Copyright
+import datetime
+_now = datetime.date.today()
+__copyright__ = "Copyright {year} {author}".format(year=_now.year, author=__author__)
