@@ -32,7 +32,22 @@ class StreamParserTests(unittest.TestCase):
         self.assertEqual(list(p.iter()), [])
 
     @mock.patch('dbcparser.parser.CHUNK_SIZE', 1)
-    def test_small_chunks(self):
+    def test_small_chunk_size(self):
+        lines = [
+            'simple',
+            '"line starts" with a string',
+            'line with "a string at the end"',
+        ]
+        stream = io.StringIO('\n'.join(lines))
+        p = dbcparser.parser.StreamParser(stream)
+
+        self.assertEqual(
+            [l.rstrip('\n') for l in p.iter()],
+            lines,
+        )
+
+    @mock.patch('dbcparser.parser.CHUNK_SIZE', 0x1000)  # consumes whole stream
+    def test_large_chunk_size(self):
         lines = [
             'simple',
             '"line starts" with a string',

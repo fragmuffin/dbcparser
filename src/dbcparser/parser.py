@@ -9,7 +9,18 @@ import re
 #   cursor until the parser finds code it deems invalid, or EOF.
 
 
-CHUNK_SIZE = 0x100
+# Optimum chunk size?
+#   Too large: each character will be read in multiple times
+#              (because the file's cursor is rewound for each line found)
+#   Too small: takes more runtime to process.
+#
+#   Since, in this relatively simple case, runtime is cheap, a lower chunk
+#   size is favorable.
+#
+#   On a cursory look through DBC files, lines are typically ~50 characters
+#   in length. So setting the chunk size ot ~20% line size will require 5
+#   loops to process 1 line... a respectable trade-off.
+CHUNK_SIZE = 10
 
 
 class DBCSyntaxError(ValueError):
