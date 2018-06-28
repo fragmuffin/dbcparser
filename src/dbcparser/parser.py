@@ -31,8 +31,6 @@ class DBCSyntaxError(ValueError):
 
 # --------- Base Parser
 class StreamParser(object):
-    REGEX = None
-
     def __init__(self, stream, stack=[]):
         self.stream = stream
         self.stack = stack
@@ -58,7 +56,7 @@ class StreamParser(object):
     def pop(self):
         return self.stack.pop(0)
 
-    def iter(self):
+    def line_iter(self):
         r"""
         Generator that yields one *line* each iteration.
 
@@ -120,8 +118,14 @@ class DBCParser(StreamParser):
     def parse(self):
         pass
 
+def _type_or_none(cast_type, value):
+    if value is None:
+        return value
+    return cast_type(value)
+
 
 class LineObject(object):
+    REGEX = None  # overridden to be a: _sre.SRE_Pattern (return from re.compile)
     TYPE_MAP = {}
 
     @classmethod
@@ -139,12 +143,57 @@ class LineObject(object):
             return cls(**match.groupdict())
         return None
 
+    def dict(self):
+        """
+        Return this object as a dict
+
+        :return: object with each attribute as a dict key/value pair
+        :rtype: :class:`dict`
+        """
+        return {
+            v: getattr(self, v)
+            for v in self.REGEX.groupindex.keys()
+        }
+
     def __init__(self, **kwargs):
-        for (k, v) in kwargs.items():
-            setattr(self, k, self.TYPE_MAP.get(k, str))
+        for (key, val) in kwargs.items():
+            setattr(self, key, _type_or_none(self.TYPE_MAP.get(key, str), val))
 
 
-class Message(LineObject):
+# --- Types
+def _t_transmitter(value):
+    if value == 'Vector__XXX':  # Null node
+        return None
+    return value
+
+def _t_endianness(value):
+    return value == '1'
+
+def _t_signed(value):
+    return value == '-'
+
+def _t_receivers(value):
+    return [
+        rx.strip() for rx in value.split(',')
+        if rx != 'Vector__XXX'  # Null node
+    ]
+
+def _t_node_list(value):
+    return [
+        node for node in re.split(r'\s+', value)
+        if node  # remove ''
+    ]
+
+_t_enum_list_regex = re.compile(r'(\d+)\s*"([^"]*)"')
+def _t_enum_list(value):
+    enums = {}
+    for m in _t_enum_list_regex.finditer(value):
+        (k, v) = m.groups()
+        enums[int(k)] = v
+    return enums
+
+
+class Frame(LineObject):
     # Examples:
     #   BO_ 2566903475 ConverterInputOutput: 8 DCDC
     #   BO_ 1258 PDORx4_Inv1: 8 INV_1
@@ -152,7 +201,7 @@ class Message(LineObject):
     REGEX = re.compile(r'''
         ^BO_\s+                 # line start
         (?P<address>\d+)\s*     # address (decimal)
-        (?P<name>\S+)\s*:\s*    # message name
+        (?P<name>\S+)\s*:\s*    # frame name
         (?P<dlc>\d+)\s+         # dlc
         (?P<transmitter>\S+)    # transmitter, mandatory, only 1
         \s*$                    # line end
@@ -162,8 +211,9 @@ class Message(LineObject):
         'address': int,
         'name': str,
         'dlc': int,
-        'transmitter': str,
+        'transmitter': _t_transmitter,
     }
+
 
 class Signal(LineObject):
     # Examples:
@@ -173,10 +223,10 @@ class Signal(LineObject):
     REGEX = re.compile(r'''
         ^\s*SG_\s+                  # line start, can be tabbed in (fault tolerant)
         (?P<name>\S+)\s*            # signal name
-        (?P<mux>(M|m\d+))?\s*:\s*   # message multiplexing: M index, m1 signal where index is 1
+        (?P<mux>(M|m\d+))?\s*:\s*   # frame multiplexing: M index, m1 signal where index is 1
         (?P<start>\d+)\s*\|\s*      # start bit
         (?P<length>\d+)\s*@\s*      # length (bits)
-        (?P<endianness>[01])\s*     # 0 motorola, 1 intel
+        (?P<little_endian>[01])\s*  # 0 big endian, 1 little endian
         (?P<signed>[+-])\s*         # - signed, + not signed
         \(
             \s*(?P<factor>[^,]+?)\s*,   # factor
@@ -191,6 +241,20 @@ class Signal(LineObject):
         \s*$                        # end of line
     ''', re.VERBOSE)
 
+    TYPE_MAP = {
+        'name': str,
+        'mux': str,
+        'start': int,
+        'length': int,
+        'little_endian': _t_endianness,
+        'signed': _t_signed,
+        'factor': float,
+        'offset': float,
+        'min': float,
+        'max': float,
+        'unit': str,
+        'receivers': _t_receivers,
+    }
 
 
 class SignalComment(LineObject):
@@ -200,8 +264,162 @@ class SignalComment(LineObject):
     #   extends over multiple lines";
     REGEX = re.compile(r'''
         ^CM_\s+SG_\s+           # line start
-        (?P<address>\d+)\s+     # message address
-        (?P<name>[^\s"]+)\s*    # signal name
+        (?P<address>\d+)\s+     # frame address
+        (?P<name>\w+)\s*        # signal name
         "(?P<comment>.*)"\s*    # comment
         ;\s*$                   # end of line
     ''', re.MULTILINE | re.DOTALL | re.VERBOSE)
+
+    TYPE_MAP = {
+        'address': int,
+        'name': str,
+        'comment': str,
+    }
+
+
+class FrameComment(LineObject):
+    # Examples:
+    #   CM_ BO_ 2365573367  "Fault bits.";
+    #   CM_ BO_ 123  "multiline comment
+    #   spans multiple lines... go figure!";
+    REGEX = re.compile(r'''
+        ^CM_\s+BO_\s+           # line start
+        (?P<address>\d+)\s+     # frame address
+        "(?P<comment>.*)"\s*    # comment
+        ;\s*$                   # end of line
+    ''', re.MULTILINE | re.DOTALL | re.VERBOSE)
+
+    TYPE_MAP = {
+        'address': int,
+        'comment': str,
+    }
+
+
+class NodeList(LineObject):
+    # Examples:
+    #   BU_ ABC DEF
+    #   BU_ Node1 INV_1 AUX
+    REGEX = re.compile(r'''
+        ^BU_\s*:\s*         # line start
+        (?P<nodes>.*)\s*    # nodes list (space separated)
+        $                   # line end
+    ''', re.VERBOSE)
+
+    TYPE_MAP = {
+        'nodes': _t_node_list,
+    }
+
+
+class NodeComment(LineObject):
+    # Example:
+    #   CM_ BU_ testBU "sender ECU";
+    #   CM_ BU_ NodeX "comment over
+    #   multiple lines";
+    REGEX = re.compile(r'''
+        ^CM_\s+BU_\s+           # line start
+        (?P<node>\S+)\s+        # node name
+        "(?P<comment>.*)"\s*    # comment
+        ;\s*$                   # line end
+    ''', re.MULTILINE | re.DOTALL | re.VERBOSE)
+
+    TYPE_MAP = {
+        'node': str,
+        'comment': str,
+    }
+
+
+class Enumeration(LineObject):
+    # Example:
+    #   VAL_ 291 Signal 1 "one" 2 "two" 3 "three";
+    REGEX = re.compile(r'''
+        ^VAL_\s+            # line start
+        (?P<address>\d+)\s+ # frame address
+        (?P<signal>\S+)\s+  # signal name
+        (?P<enums>(
+            \d+\s*          # value (decimal)
+            "[^"]*"\s*      # enumeration name
+        )+)\s*              # one or many
+        ;\s*$               # line end
+    ''', re.VERBOSE)
+
+    TYPE_MAP = {
+        'address': int,
+        'signal': str,
+        'enums': _t_enum_list,
+    }
+
+
+class ValueTable(LineObject):
+    # Example:
+    #   VAL_TABLE_ Baudrate 0 "125K" 1 "250K" 2 "500K" 3 "1M";
+    REGEX = re.compile(r'''
+        ^VAL_TABLE_\s+      # line start
+        (?P<table>\S+)\s+   # table name
+        (?P<enums>(
+            \d+\s*          # value (decimal)
+            "[^"]*"\s*      # enumeration name
+        )+)\s*              # one or many
+        ;\s*$               # line end
+    ''', re.VERBOSE)
+
+    TYPE_MAP = {
+        'tble': str,
+        'enums': _t_enum_list,
+    }
+
+
+# ======= TODO:
+# ----- Defines
+# Signal Defines
+"^BA\_DEF\_ +SG\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
+# Examples:
+#   BA_DEF_ SG_ "DisplayDecimalPlaces" INT 0 65535;
+#   BA_DEF_ SG_ "GenSigStartValue" FLOAT -3.4E+038 3.4E+038;
+#   BA_DEF_ SG_ "HexadecimalOutput" BOOL False True;
+#   BA_DEF_ SG_ "LongName" STR;
+
+# Frame Defines
+"^BA\_DEF\_ +BO\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
+# Examples:
+#   BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+#   BA_DEF_ BO_ "Receivable" BOOL False True;
+
+# Node Defines
+"^BA\_DEF\_ +BU\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
+# Examples:
+#   BA_DEF_ BU_ "NWM-Knoten" ENUM  "nein","ja";
+#   BA_DEF_ BU_ "NWM-Stationsadresse" HEX 0 63;
+
+# Global Defines
+"^BA\_DEF\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
+# Examples:
+#   BA_DEF_ "Thingy" INT 0 65535;
+
+# ----- Attributes
+# Frame Attribute
+"^BA_ +\"(.*)\" +BO_ +(\w+) +(.+);"
+
+# Signal Attribute
+"^BA_ +\"(.*)\" +SG_ +(\w+) +(\w+) +(.+);"
+
+# Node Attribute
+"^BA_ +\"(.*)\" +BU_ +(\w+) +(.+);"
+
+# Global Attribute
+"^BA_ +\"([A-Za-z0-9\-\_]+)\" +([\"A-Za-z0-9\-\_\.]+);"
+
+# ----- Other
+# Signal Group
+"^SIG_GROUP_ +(\w+) +(\w+) +(\w+) +\:(.*);"
+
+# Signal Value Type
+"^SIG_VALTYPE_ +(\w+) +(\w+) +\:(.*);"
+
+# Default Value
+"^BA_DEF_DEF_ +\"([A-Za-z0-9\-_\.]+)\" +(.+)\;"
+
+# ?
+"^BO_TX_BU_ ([0-9]+) *: *(.+);"
+
+# ?
+"^SG_MUL_VAL_ +([0-9]+) +([A-Za-z0-9\-_]+) +([A-Za-z0-9\-_]+) +([0-9]+)\-([0-9]+) *;"
