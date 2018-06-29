@@ -190,6 +190,22 @@ def _t_enum_list(value):
     return enums
 
 
+_t_flex_map = (
+    (re.compile(r'^(?P<val>[+-]?\d+)$'), int),
+    (re.compile(r'(?P<val>[+-]?(\d*\.\d+|\d+\.?)(e[+-]?\d+)?)$', re.I), float),
+    (re.compile(r'^0x(?P<val>[0-9a-f]+)$', re.I), lambda v: int(v, 16)),
+    (re.compile(r'^0b(?P<val>[01]+)$', re.I), lambda v: int(v, 2)),
+    (re.compile(r'^"(?P<val>[^"]*)"$'), str),
+)
+
+def _t_flexible_val(value):
+    for (regex, typ) in _t_flex_map:
+        m = regex.search(value)
+        if m:
+            return typ(m.group('val'))
+    return value
+
+
 class Frame(LineObject):
     # Examples:
     #   BO_ 2566903475 ConverterInputOutput: 8 DCDC
@@ -463,33 +479,106 @@ class NodeDefine(GlobalDefine):
 
 
 # ----- Attributes
-# TODO
+class GlobalAttribute(LineObject):
+    REGEX = re.compile(r'''
+        ^BA_\s*                 # line start
+        "(?P<name>[^"]*)"\s*    # name
+        (?P<value>.*?)\s*       # value
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
+
+    TYPE_MAP = {
+        'name': str,
+        'value': _t_flexible_val,
+    }
 
 
-# ======= TODO:
+class SignalAttribute(LineObject):
+    # Examples:
+    #   BA_ "GenSigStartValue" SG_ 2365565505 V50to88pct 2000.0;
+    #   BA_ "GenSigStartValue" SG_ 123 Dummy 0.0;
+    #   BA_ "DisplayDecimalPlaces" SG_ 2634007031 ControlSwRev 2;
+    REGEX = re.compile(r'''
+        ^BA_\s*                 # line start
+        "(?P<name>[^"]*)"\s*    # name
+        SG_\s+
+        (?P<address>\d+)\s+     # frame address
+        (?P<signal_name>\w+)\s+ # signal name
+        (?P<value>.*?)\s*       # value
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
 
-# ----- Attributes
-# Global Attribute
-"^BA_ +\"([A-Za-z0-9\-\_]+)\" +([\"A-Za-z0-9\-\_\.]+);"
+    TYPE_MAP = {
+        'name': str,
+        'address': int,
+        'signal_name': str,
+        'value': _t_flexible_val,
+    }
 
-# Frame Attribute
-"^BA_ +\"(.*)\" +BO_ +(\w+) +(.+);"
 
-# Signal Attribute
-"^BA_ +\"(.*)\" +SG_ +(\w+) +(\w+) +(.+);"
+class FrameAttribute(LineObject):
+    # Examples:
+    #   BA_ "GenMsgSendType" BO_ 2164239169 1;
+    #   BA_ "GenMsgStartValue" BO_ 2164239169 "0000000000000000";
+    REGEX = re.compile(r'''
+        ^BA_\s*                 # line start
+        "(?P<name>[^"]*)"\s*    # name
+        BO_\s+
+        (?P<address>\d+)\s+     # frame address
+        (?P<value>.*?)\s*       # value
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
 
-# Node Attribute
-"^BA_ +\"(.*)\" +BU_ +(\w+) +(.+);"
+    TYPE_MAP = {
+        'name': str,
+        'address': int,
+        'value': _t_flexible_val,
+    }
 
-# ----- Other
+
+class NodeAttribute(LineObject):
+    # Example(s):
+    #   BA_ "NetworkNode" BU_ testBU 273;
+    REGEX = re.compile(r'''
+        ^BA_\s*                 # line start
+        "(?P<name>[^"]*)"\s*    # name
+        BU_\s+
+        (?P<node_name>\w+)\s+   # node name
+        (?P<value>.*?)\s*       # value
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
+
+    TYPE_MAP = {
+        'name': str,
+        'node_name': str,
+        'value': _t_flexible_val,
+    }
+
+
+# ----- Default Value
+class DefaultValue(LineObject):
+    # Example(s):
+    #   BA_DEF_DEF_ "GenMsgCycleTime" 65535;
+    #   BA_DEF_DEF_ "NetworkNode" 65535;
+    REGEX = re.compile(r'''
+        ^BA_DEF_DEF_\s*         # line start
+        "(?P<name>[^"]*)"\s*    # name
+        (?P<value>.*?)\s*       # value
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
+
+    TYPE_MAP = {
+        'name': str,
+        'value': _t_flexible_val,
+    }
+
+
+# ----- TODO: observed from canmatrix parser, no examples available
 # Signal Group
 "^SIG_GROUP_ +(\w+) +(\w+) +(\w+) +\:(.*);"
 
 # Signal Value Type
 "^SIG_VALTYPE_ +(\w+) +(\w+) +\:(.*);"
-
-# Default Value
-"^BA_DEF_DEF_ +\"([A-Za-z0-9\-_\.]+)\" +(.+)\;"
 
 # ?
 "^BO_TX_BU_ ([0-9]+) *: *(.+);"

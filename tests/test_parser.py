@@ -84,7 +84,7 @@ class StreamParserTests(unittest.TestCase):
             list(p.line_iter())
 
 
-class LineObjeTest(unittest.TestCase):
+class LineObjectTest(unittest.TestCase):
     CLASS = None  # override to test class
     def assertParsedLine(self, line, expected):
         obj = self.CLASS.from_line(line)
@@ -92,7 +92,7 @@ class LineObjeTest(unittest.TestCase):
         self.assertEqual(obj.dict(), expected)
 
 
-class FrameTests(LineObjeTest):
+class FrameTests(LineObjectTest):
     CLASS = dbcparser.parser.Frame
 
     def test_simple1(self):
@@ -151,7 +151,7 @@ class FrameTests(LineObjeTest):
         )
 
 
-class SignalTests(LineObjeTest):
+class SignalTests(LineObjectTest):
     CLASS = dbcparser.parser.Signal
 
     def test_signal_simple(self):
@@ -230,7 +230,7 @@ class SignalTests(LineObjeTest):
         )
 
 
-class SignalCommentTests(LineObjeTest):
+class SignalCommentTests(LineObjectTest):
     CLASS = dbcparser.parser.SignalComment
 
     def test_simple(self):
@@ -274,7 +274,7 @@ class SignalCommentTests(LineObjeTest):
         )
 
 
-class FrameCommentTests(LineObjeTest):
+class FrameCommentTests(LineObjectTest):
     CLASS = dbcparser.parser.FrameComment
 
     def test_simple(self):
@@ -305,7 +305,7 @@ class FrameCommentTests(LineObjeTest):
         )
 
 
-class NodeListTests(LineObjeTest):
+class NodeListTests(LineObjectTest):
     CLASS = dbcparser.parser.NodeList
 
     def test_simple(self):
@@ -330,7 +330,7 @@ class NodeListTests(LineObjeTest):
         )
 
 
-class NodeCommentTests(LineObjeTest):
+class NodeCommentTests(LineObjectTest):
     CLASS = dbcparser.parser.NodeComment
 
     def test_simple(self):
@@ -361,7 +361,7 @@ class NodeCommentTests(LineObjeTest):
         )
 
 
-class EnumerationTests(LineObjeTest):
+class EnumerationTests(LineObjectTest):
     CLASS = dbcparser.parser.Enumeration
 
     def test_simple(self):
@@ -405,7 +405,7 @@ class EnumerationTests(LineObjeTest):
         )
 
 
-class ValueTableTests(LineObjeTest):
+class ValueTableTests(LineObjectTest):
     CLASS = dbcparser.parser.ValueTable
 
     def test_simple(self):
@@ -436,7 +436,8 @@ class ValueTableTests(LineObjeTest):
         )
 
 
-class GlobalDefineTests(LineObjeTest):
+# ------------- Defines
+class GlobalDefineTests(LineObjectTest):
     KEY = ''
     CLASS = dbcparser.parser.GlobalDefine
 
@@ -514,3 +515,115 @@ class FrameDefineTests(GlobalDefineTests):
 class NodeDefineTests(GlobalDefineTests):
     KEY = ' BU_'
     CLASS = dbcparser.parser.NodeDefine
+
+
+# ------------- Attributes
+class GlobalAttributeTests(LineObjectTest):
+    CLASS = dbcparser.parser.GlobalAttribute
+
+    def test_int(self):
+        self.assertParsedLine('BA_ "Foo" 123;', {'name': 'Foo', 'value': 123})
+        self.assertParsedLine('BA_ "Foo" -123;', {'name': 'Foo', 'value': -123})
+
+    def test_float(self):
+        floats = ['10.23', '-10.23', '.23', '-12.', '+4.5e-5', '4.5e5', '-4.5e+5']
+        for v in floats:
+            self.assertParsedLine(
+                'BA_ "a" %s;' % v,
+                {'name': 'a', 'value': float(v)}
+            )
+
+    def test_hex(self):
+        self.assertParsedLine('BA_ "Foo" 0x0;', {'name': 'Foo', 'value': 0})
+        self.assertParsedLine('BA_ "Foo" 0XABC;', {'name': 'Foo', 'value': 0xABC})
+
+    def test_string(self):
+        self.assertParsedLine('BA_ "x" "abc";', {'name': 'x', 'value': 'abc'})
+        self.assertParsedLine('BA_ "x" foo bar;', {'name': 'x', 'value': 'foo bar'})
+
+
+class SignalAttributeTests(LineObjectTest):
+    CLASS = dbcparser.parser.SignalAttribute
+
+    def test_simple(self):
+        self.assertParsedLine(
+            'BA_ "GenSigStartValue" SG_ 2365565505 V50to88pct 2000.0;',
+            {
+                'name': 'GenSigStartValue',
+                'address': 2365565505,
+                'signal_name': 'V50to88pct',
+                'value': 2000.0,
+            }
+        )
+
+    def test_whitespace_lots(self):
+        self.assertParsedLine(
+            'BA_  "DisplayDecimalPlaces"  SG_  2634007031  ControlSwRev  2 ;  ',
+            {
+                'name': 'DisplayDecimalPlaces',
+                'address': 2634007031,
+                'signal_name': 'ControlSwRev',
+                'value': 2,
+            }
+        )
+
+    def test_whitespace_minimum(self):
+        self.assertParsedLine(
+            'BA_"GenSigStartValue"SG_ 123 Dummy 0.0;',
+            {
+                'name': 'GenSigStartValue',
+                'address': 123,
+                'signal_name': 'Dummy',
+                'value': 0.0,
+            }
+        )
+
+class FrameAttributeTests(LineObjectTest):
+    CLASS = dbcparser.parser.FrameAttribute
+
+    def test_simple(self):
+        self.assertParsedLine(
+            'BA_ "GenMsgSendType" BO_ 2164239169 1;',
+            {
+                'name': 'GenMsgSendType',
+                'address': 2164239169,
+                'value': 1,
+            }
+        )
+
+    def test_str(self):
+        self.assertParsedLine(
+            'BA_ "GenMsgStartValue" BO_ 2164239169 "0000000000000000";',
+            {
+                'name': 'GenMsgStartValue',
+                'address': 2164239169,
+                'value': '0000000000000000',
+            }
+        )
+
+class NodeAttributeTests(LineObjectTest):
+    CLASS = dbcparser.parser.NodeAttribute
+
+    def test_simple(self):
+        self.assertParsedLine(
+            'BA_ "NetworkNode" BU_ testBU 273;',
+            {
+                'name': 'NetworkNode',
+                'node_name': 'testBU',
+                'value': 273,
+            }
+        )
+
+
+# ------------- Other
+class DefaultValueTests(LineObjectTest):
+    CLASS = dbcparser.parser.DefaultValue
+
+    def test_simple(self):
+        self.assertParsedLine(
+            'BA_DEF_DEF_ "GenMsgCycleTime" 65535;',
+            {
+                'name': 'GenMsgCycleTime',
+                'value': 65535,
+            }
+        )
