@@ -28,7 +28,6 @@ class DBCSyntaxError(ValueError):
     pass
 
 
-
 # --------- Base Parser
 class StreamParser(object):
     def __init__(self, stream, stack=[]):
@@ -118,11 +117,6 @@ class DBCParser(StreamParser):
     def parse(self):
         pass
 
-def _type_or_none(cast_type, value):
-    if value is None:
-        return value
-    return cast_type(value)
-
 
 class LineObject(object):
     REGEX = None  # overridden to be a: _sre.SRE_Pattern (return from re.compile)
@@ -157,7 +151,10 @@ class LineObject(object):
 
     def __init__(self, **kwargs):
         for (key, val) in kwargs.items():
-            setattr(self, key, _type_or_none(self.TYPE_MAP.get(key, str), val))
+            if val is None:
+                setattr(self, key, None)
+            else:
+                setattr(self, key, self.TYPE_MAP.get(key, str)(val))
 
 
 # --- Types
@@ -368,34 +365,113 @@ class ValueTable(LineObject):
     }
 
 
-# ======= TODO:
 # ----- Defines
-# Signal Defines
-"^BA\_DEF\_ +SG\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
-# Examples:
-#   BA_DEF_ SG_ "DisplayDecimalPlaces" INT 0 65535;
-#   BA_DEF_ SG_ "GenSigStartValue" FLOAT -3.4E+038 3.4E+038;
-#   BA_DEF_ SG_ "HexadecimalOutput" BOOL False True;
-#   BA_DEF_ SG_ "LongName" STR;
+class GlobalDefine(LineObject):
+    # Examples:
+    #   BA_DEF_ "Thingy" INT 0 65535;
+    REGEX = re.compile(r'''
+        ^BA_DEF_\s*             # line start
+        "(?P<name>[^"]*)"\s*    # name
+        (?P<type>\S+)           # type
+        (\s+(?P<params>.*))?\s* # type parameters
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
 
-# Frame Defines
-"^BA\_DEF\_ +BO\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
-# Examples:
-#   BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
-#   BA_DEF_ BO_ "Receivable" BOOL False True;
+    TYPE_MAP = {
+        'name': str,
+    }
 
-# Node Defines
-"^BA\_DEF\_ +BU\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
-# Examples:
-#   BA_DEF_ BU_ "NWM-Knoten" ENUM  "nein","ja";
-#   BA_DEF_ BU_ "NWM-Stationsadresse" HEX 0 63;
+    def __init__(self, **kwargs):
+        # Set type from (type_str, params) pair
+        type_str = kwargs.pop('type')
+        params = kwargs.pop('params')
 
-# Global Defines
-"^BA\_DEF\_ +\"([A-Za-z0-9\-_]+)\" +(.+);"
-# Examples:
-#   BA_DEF_ "Thingy" INT 0 65535;
+        # Map type
+        self.type = {
+            'STR': str, 'STRING': str,
+            'INT': int,
+            'HEX': int,
+            'FLOAT': float,
+            'BOOL': bool,
+            'ENUM': tuple,
+        }[type_str]
+
+        # Set type-specific attributes
+        if self.type in (int, float):
+            # min, max
+            self.params = tuple(
+                self.type(v) for v in re.split(r'\s+', params)
+            )
+        elif self.type is tuple:  # ENUM
+            # enums
+            value_regex = re.compile(r'"(?P<val>[^"]+)"')
+            self.params = self.type(
+                m.group('val').strip()
+                for m in value_regex.finditer(params)
+            )
+        elif self.type is bool:
+            self.params = tuple(
+                v.lower() == 'true'
+                for v in re.split('\s+', params)
+                if v  # ignore blanks
+            )
+        else:
+            self.params = None
+
+        super(GlobalDefine, self).__init__(**kwargs)
+
+
+class SignalDefine(GlobalDefine):
+    # Examples:
+    #   BA_DEF_ SG_ "DisplayDecimalPlaces" INT 0 65535;
+    #   BA_DEF_ SG_ "GenSigStartValue" FLOAT -3.4E+038 3.4E+038;
+    #   BA_DEF_ SG_ "HexadecimalOutput" BOOL False True;
+    #   BA_DEF_ SG_ "LongName" STR;
+    REGEX = re.compile(r'''
+        ^BA_DEF_\s+SG_\s*       # line start
+        "(?P<name>[^"]*)"\s*    # name
+        (?P<type>\S+)           # type
+        (\s+(?P<params>.*))?\s* # type parameters
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
+
+
+class FrameDefine(GlobalDefine):
+    # Examples:
+    #   BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+    #   BA_DEF_ BO_ "Receivable" BOOL False True;
+    REGEX = re.compile(r'''
+        ^BA_DEF_\s+BO_\s*       # line start
+        "(?P<name>[^"]*)"\s*    # name
+        (?P<type>\S+)           # type
+        (\s+(?P<params>.*))?\s* # type parameters
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
+
+
+class NodeDefine(GlobalDefine):
+    # Examples:
+    #   BA_DEF_ BU_ "NWM-Knoten" ENUM  "nein","ja";
+    #   BA_DEF_ BU_ "NWM-Stationsadresse" HEX 0 63;
+    REGEX = re.compile(r'''
+        ^BA_DEF_\s+BU_\s*       # line start
+        "(?P<name>[^"]*)"\s*    # name
+        (?P<type>\S+)           # type
+        (\s+(?P<params>.*))?\s* # type parameters
+        ;\s*$                   # line end
+    ''', re.VERBOSE)
+
 
 # ----- Attributes
+# TODO
+
+
+# ======= TODO:
+
+# ----- Attributes
+# Global Attribute
+"^BA_ +\"([A-Za-z0-9\-\_]+)\" +([\"A-Za-z0-9\-\_\.]+);"
+
 # Frame Attribute
 "^BA_ +\"(.*)\" +BO_ +(\w+) +(.+);"
 
@@ -404,9 +480,6 @@ class ValueTable(LineObject):
 
 # Node Attribute
 "^BA_ +\"(.*)\" +BU_ +(\w+) +(.+);"
-
-# Global Attribute
-"^BA_ +\"([A-Za-z0-9\-\_]+)\" +([\"A-Za-z0-9\-\_\.]+);"
 
 # ----- Other
 # Signal Group
