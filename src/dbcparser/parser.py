@@ -112,13 +112,44 @@ class StreamParser(object):
             else:
                 break
 
+# @dbc_line decorator
+DBC_LINE_CLASSES = []
+def dbc_line(cls):
+    DBC_LINE_CLASSES.append(cls)
+    return cls
+
 
 class DBCParser(StreamParser):
     def parse(self):
-        pass
+        # DBC Lines to LineObject instances
+        def get_obj(line):
+            for cls in DBC_LINE_CLASSES:
+                obj = cls.from_line(line)
+                if obj:
+                    return obj
+            return None
+
+        frame_latest = None
+
+        obj_list = []
+        for line in self.line_iter():
+            obj = get_obj(line)
+            if obj is None:
+                continue
+
+            # Link Signals to Frames (based on parsing order)
+            if isinstance(obj, Frame):
+                frame_latest = obj
+            elif isinstance(obj, Signal):
+                obj.link_to_frame(frame_latest)
+
+            obj_list.append(obj)
+
+        # Link everything together
 
 
 class LineObject(object):
+    PARENT = None
     REGEX = None  # overridden to be a: _sre.SRE_Pattern (return from re.compile)
     TYPE_MAP = {}
 
@@ -206,6 +237,7 @@ def _t_flexible_val(value):
     return value
 
 
+@dbc_line
 class Frame(LineObject):
     # Examples:
     #   BO_ 2566903475 ConverterInputOutput: 8 DCDC
@@ -228,6 +260,7 @@ class Frame(LineObject):
     }
 
 
+@dbc_line
 class Signal(LineObject):
     # Examples:
     #   SG_ Frequency_command : 23|16@0+ (0.1,0) [45|65] "Hz" ABC,DEF
@@ -269,7 +302,11 @@ class Signal(LineObject):
         'receivers': _t_receivers,
     }
 
+    def link_to_frame(self, frame):
+        self.frame = frame
 
+
+@dbc_line
 class SignalComment(LineObject):
     # Examples:
     #   CM_ SG_ 2164239169 SignalName "this is the comment";
@@ -290,6 +327,7 @@ class SignalComment(LineObject):
     }
 
 
+@dbc_line
 class FrameComment(LineObject):
     # Examples:
     #   CM_ BO_ 2365573367  "Fault bits.";
@@ -308,6 +346,7 @@ class FrameComment(LineObject):
     }
 
 
+@dbc_line
 class NodeList(LineObject):
     # Examples:
     #   BU_ ABC DEF
@@ -323,6 +362,7 @@ class NodeList(LineObject):
     }
 
 
+@dbc_line
 class NodeComment(LineObject):
     # Example:
     #   CM_ BU_ testBU "sender ECU";
@@ -341,6 +381,7 @@ class NodeComment(LineObject):
     }
 
 
+@dbc_line
 class Enumeration(LineObject):
     # Example:
     #   VAL_ 291 Signal 1 "one" 2 "two" 3 "three";
@@ -362,6 +403,7 @@ class Enumeration(LineObject):
     }
 
 
+@dbc_line
 class ValueTable(LineObject):
     # Example:
     #   VAL_TABLE_ Baudrate 0 "125K" 1 "250K" 2 "500K" 3 "1M";
@@ -382,6 +424,7 @@ class ValueTable(LineObject):
 
 
 # ----- Defines
+@dbc_line
 class GlobalDefine(LineObject):
     # Examples:
     #   BA_DEF_ "Thingy" INT 0 65535;
@@ -437,6 +480,7 @@ class GlobalDefine(LineObject):
         super(GlobalDefine, self).__init__(**kwargs)
 
 
+@dbc_line
 class SignalDefine(GlobalDefine):
     # Examples:
     #   BA_DEF_ SG_ "DisplayDecimalPlaces" INT 0 65535;
@@ -452,6 +496,7 @@ class SignalDefine(GlobalDefine):
     ''', re.VERBOSE)
 
 
+@dbc_line
 class FrameDefine(GlobalDefine):
     # Examples:
     #   BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
@@ -465,6 +510,7 @@ class FrameDefine(GlobalDefine):
     ''', re.VERBOSE)
 
 
+@dbc_line
 class NodeDefine(GlobalDefine):
     # Examples:
     #   BA_DEF_ BU_ "NWM-Knoten" ENUM  "nein","ja";
@@ -479,6 +525,7 @@ class NodeDefine(GlobalDefine):
 
 
 # ----- Attributes
+@dbc_line
 class GlobalAttribute(LineObject):
     REGEX = re.compile(r'''
         ^BA_\s*                 # line start
@@ -493,6 +540,7 @@ class GlobalAttribute(LineObject):
     }
 
 
+@dbc_line
 class SignalAttribute(LineObject):
     # Examples:
     #   BA_ "GenSigStartValue" SG_ 2365565505 V50to88pct 2000.0;
@@ -516,6 +564,7 @@ class SignalAttribute(LineObject):
     }
 
 
+@dbc_line
 class FrameAttribute(LineObject):
     # Examples:
     #   BA_ "GenMsgSendType" BO_ 2164239169 1;
@@ -536,6 +585,7 @@ class FrameAttribute(LineObject):
     }
 
 
+@dbc_line
 class NodeAttribute(LineObject):
     # Example(s):
     #   BA_ "NetworkNode" BU_ testBU 273;
@@ -556,6 +606,7 @@ class NodeAttribute(LineObject):
 
 
 # ----- Default Value
+@dbc_line
 class DefaultValue(LineObject):
     # Example(s):
     #   BA_DEF_DEF_ "GenMsgCycleTime" 65535;
