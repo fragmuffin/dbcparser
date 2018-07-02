@@ -112,6 +112,7 @@ class StreamParser(object):
             else:
                 break
 
+
 # @dbc_line decorator
 DBC_LINE_CLASSES = []
 def dbc_line(cls):
@@ -197,16 +198,16 @@ def _t_transmitter(value):
 def _t_endianness(value):
     return value == '1'
 
-def _t_signed(value):
+def _t_signedness(value):
     return value == '-'
 
-def _t_receivers(value):
+def _t_nodelist_csv(value):
     return [
-        rx.strip() for rx in value.split(',')
-        if rx != 'Vector__XXX'  # Null node
+        rx for rx in re.split(r'\s*,\s*', value.strip())
+        if rx not in ['', 'Vector__XXX']  # Null node
     ]
 
-def _t_node_list(value):
+def _t_nodelist_space(value):
     return [
         node for node in re.split(r'\s+', value)
         if node  # remove ''
@@ -293,13 +294,13 @@ class Signal(LineObject):
         'start': int,
         'length': int,
         'little_endian': _t_endianness,
-        'signed': _t_signed,
+        'signed': _t_signedness,
         'factor': float,
         'offset': float,
         'min': float,
         'max': float,
         'unit': str,
-        'receivers': _t_receivers,
+        'receivers': _t_nodelist_csv,
     }
 
     def link_to_frame(self, frame):
@@ -358,7 +359,7 @@ class NodeList(LineObject):
     ''', re.VERBOSE)
 
     TYPE_MAP = {
-        'nodes': _t_node_list,
+        'nodes': _t_nodelist_space,
     }
 
 
