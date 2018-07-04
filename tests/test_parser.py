@@ -14,5 +14,5 @@ class ParserTests(unittest.TestCase):
         with codecs.open(filename, 'r', encoding='utf_8') as stream:
             parser = dbcparser.parser.DBCParser(stream)
 
-            objects = parser.parse(strict=True)
-            self.assertIsInstance(objects, list)  # FIXME
+            bus = parser.parse(strict=True)
+            self.assertIsInstance(bus, dbcparser.Bus)

@@ -1,6 +1,12 @@
 #import six
 import re
 
+from .containers import (
+    Bus as _Bus,
+    Node as _Node,
+    Frame as _Frame,
+    Signal as _Signal,
+)
 
 # Nested parsing design
 #   As the DBC file is parsed, each nested block of code is compartmentalised
@@ -166,12 +172,54 @@ class DBCParser(StreamParser):
             obj_list.append(obj)
 
         # --------------- Linking ---------------
+        # At this point the file is fully parsed (and closed), and
+        # the obj_list is fully populated with LineObject instances.
         def class_objects(cls, cond=lambda o: True):
             for obj in obj_list:
                 if isinstance(obj, cls) and cond(obj):
                     yield obj
 
-        return obj_list
+        bus = _Bus()
+
+        # ----- Nodes
+        # find all references to a node
+        node_names = set()
+        for obj in class_objects(NodeList):
+            node_names |= set(obj.nodes)
+        for obj in class_objects(Signal):
+            node_names |= set(obj.receivers)
+        node_names |= set(o.transmitter for o in class_objects(Frame))
+        node_names |= set(o.node for o in class_objects(NodeComment))
+        node_names |= set(o.node for o in class_objects(NodeAttribute))
+
+        for name in node_names:
+            bus.nodes[name] = _Node(name=name)
+
+        # ----- Frames
+        for obj in class_objects(Frame):
+            kwargs = obj.dict()
+            kwargs['transmitter'] = bus.nodes[obj.transmitter]
+            frame = _Frame(**kwargs)
+            bus.nodes[obj.transmitter].transmits[obj.name] = frame
+
+        # ----- Signals
+        for obj in class_objects(Signal):
+            kwargs = obj.dict()
+            mux = kwargs.pop('mux')
+            kwargs['is_mux'] = bool(mux)
+            if mux:
+                if mux == 'M':
+                    kwargs['mux_master'] = True
+                else:  # eg: 'm45'
+                    kwargs['mux_master'] = False
+                    kwargs['mux_index'] = int(mux[1:])  # 'm45', index = 45
+            kwargs['receivers'] = [bus.nodes[n] for n in obj.receivers]
+            kwargs['frame'] = bus.nodes[obj.frame.transmitter].transmits[obj.frame.name]
+            signal = _Signal(**kwargs)
+
+            signal.frame.signals[signal.name] = signal
+
+        return bus
 
 
 class LineObject(object):
@@ -348,7 +396,7 @@ class Signal(LineObject):
         ^\s*SG_\s+                  # line start, can be tabbed in (fault tolerant)
         (?P<name>\S+)\s*            # signal name
         (?P<mux>(M|m\d+))?\s*:\s*   # frame multiplexing: M index, m1 signal where index is 1
-        (?P<start>\d+)\s*\|\s*      # start bit
+        (?P<startbit>\d+)\s*\|\s*   # start bit
         (?P<length>\d+)\s*@\s*      # length (bits)
         (?P<little_endian>[01])\s*  # 0 big endian, 1 little endian
         (?P<signed>[+-])\s*         # - signed, + not signed
@@ -357,8 +405,8 @@ class Signal(LineObject):
             \s*(?P<offset>[^\)]+?)\s*   # offset
         \)\s*
         \[
-            \s*(?P<min>[^,]+?)\s*\|     # minimum value
-            \s*(?P<max>[^\]]+?)\s*      # maximum value
+            \s*(?P<minimum>[^,]+?)\s*\| # minimum value
+            \s*(?P<maximum>[^\]]+?)\s*  # maximum value
         \]\s*
         "(?P<unit>[^"]*)"\s*        # unit string: eg: sec, Amps, DegC
         (?P<receivers>.*?)          # receivers, a csv list
@@ -368,14 +416,14 @@ class Signal(LineObject):
     _TYPE_MAP = {
         'name': str,
         'mux': str,
-        'start': int,
+        'startbit': int,
         'length': int,
         'little_endian': _t_endianness,
         'signed': _t_signedness,
         'factor': float,
         'offset': float,
-        'min': float,
-        'max': float,
+        'minimum': float,
+        'maximum': float,
         'unit': str,
         'receivers': _t_nodelist_csv,
     }
@@ -710,14 +758,14 @@ class NodeAttribute(LineObject):
         ^BA_\s*                 # line start
         "(?P<name>[^"]*)"\s*    # name
         BU_\s+
-        (?P<node_name>\w+)\s+   # node name
+        (?P<node>\w+)\s+   # node name
         (?P<value>.*?)\s*       # value
         ;\s*$                   # line end
     ''', re.VERBOSE)
 
     _TYPE_MAP = {
         'name': str,
-        'node_name': str,
+        'node': str,
         'value': _t_flexible_val,
     }
 

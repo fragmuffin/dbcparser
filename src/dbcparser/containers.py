@@ -1,7 +1,39 @@
 
+class Bus(object):
+    r"""
+    A CAN bus
+    """
+    def __init__(self):
+        self.nodes = {}
+        self.frames = {}
+
+
+class Node(object):
+    r"""
+    An ECU connected to the CAN bus.
+    """
+    def __init__(self, name):
+        self.name = name
+
+        self.transmits = {}
+        self.receives = {}
+
+class Frame(object):
+    r"""
+    A frame, or message transmitted over the CAN bus.
+    """
+    def __init__(self, address, name, dlc, transmitter):
+        self.address = address
+        self.name = name
+        self.dlc = dlc
+        self.transmitter = transmitter
+
+        self.signals = {}
+
+
 class Signal(object):
     r"""
-    Represents a signl belonging to a :class:`Frame <dbcparser.Frame>`.
+    A signal belonging to a :class:`Frame <dbcparser.Frame>`.
 
     .. doctest::
 
@@ -80,7 +112,8 @@ class Signal(object):
     def __init__(self, name, startbit, length,
                  little_endian, signed,
                  factor, offset, minimum, maximum, unit,
-                 receivers=[], frame=None):
+                 is_mux=False, mux_master=False, mux_index=None,
+                 receivers={}, frame=None):
         self.name = name
         self.startbit = startbit
         self.length = length
@@ -91,5 +124,8 @@ class Signal(object):
         self.minimum = minimum
         self.maximum = maximum
         self.unit = unit
+        self.is_mux = is_mux
+        self.mux_master = mux_master
+        self.mux_index = mux_index
         self.receivers = receivers
         self.frame = frame

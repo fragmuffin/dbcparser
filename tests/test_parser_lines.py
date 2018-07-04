@@ -80,10 +80,10 @@ class SignalTests(LineObjectTest):
             {
                 'name': 'Frequency_command',
                 'mux': None,
-                'start': 23, 'length': 16,
+                'startbit': 23, 'length': 16,
                 'little_endian': False, 'signed': False,
                 'factor': 0.1, 'offset': 0.,
-                'min': 45., 'max': 65.,
+                'minimum': 45., 'maximum': 65.,
                 'unit': 'Hz',
                 'receivers': ['ABC', 'DEF'],
             }
@@ -95,10 +95,10 @@ class SignalTests(LineObjectTest):
             {
                 'name': 'CommandSetNVParam_MUX',
                 'mux': 'M',
-                'start': 7, 'length': 16,
+                'startbit': 7, 'length': 16,
                 'little_endian': False, 'signed': True,
                 'factor': 1., 'offset': 0.,
-                'min': -32768., 'max': 32767.,
+                'minimum': -32768., 'maximum': 32767.,
                 'unit': '',
                 'receivers': [],
             }
@@ -110,10 +110,10 @@ class SignalTests(LineObjectTest):
             {
                 'name': 'Dummy',
                 'mux': 'm0',
-                'start': 23, 'length': 16,
+                'startbit': 23, 'length': 16,
                 'little_endian': False, 'signed': False,
                 'factor': 1., 'offset': 0.,
-                'min': 0., 'max': 65535,
+                'minimum': 0., 'maximum': 65535,
                 'unit': '',
                 'receivers': [],
             }
@@ -125,10 +125,10 @@ class SignalTests(LineObjectTest):
             {
                 'name': 'Dummy',
                 'mux': 'm0',
-                'start': 23, 'length': 16,
+                'startbit': 23, 'length': 16,
                 'little_endian': False, 'signed': False,
                 'factor': 1., 'offset': 0.,
-                'min': 0., 'max': 65535.,
+                'minimum': 0., 'maximum': 65535.,
                 'unit': '',
                 'receivers': [],
             }
@@ -140,10 +140,10 @@ class SignalTests(LineObjectTest):
             {
                 'name': 'Dummy',
                 'mux': 'm0',
-                'start': 23, 'length': 16,
+                'startbit': 23, 'length': 16,
                 'little_endian': False, 'signed': False,
                 'factor': 1., 'offset': 0.,
-                'min': 0., 'max': 65535.,
+                'minimum': 0., 'maximum': 65535.,
                 'unit': '',
                 'receivers': [],
             }
@@ -529,7 +529,7 @@ class NodeAttributeTests(LineObjectTest):
             'BA_ "NetworkNode" BU_ testBU 273;',
             {
                 'name': 'NetworkNode',
-                'node_name': 'testBU',
+                'node': 'testBU',
                 'value': 273,
             }
         )
