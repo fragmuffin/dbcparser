@@ -121,7 +121,7 @@ def dbc_line(cls):
 
 
 class DBCParser(StreamParser):
-    def parse(self):
+    def parse(self, strict=False):
         # --------------- Lines to LineObject instances ---------------
         def get_obj(line):
             for cls in DBC_LINE_CLASSES:
@@ -131,21 +131,37 @@ class DBCParser(StreamParser):
             return None
 
         frame_latest = None
+        ignore_tabbed = False
 
         obj_list = []
         for line in self.line_iter():
-            obj = get_obj(line)
-            if obj is None:
-                striped_line = line.rstrip()
-                if striped_line:
-                    print(striped_line)
+            # Ignore empty lines
+            if not line.rstrip():
                 continue
 
-            # Link Signals to Frames (based on parsing order)
+            # state: Ignore tabbed in lines
+            #   ignore lines that begin with whitespace.
+            if ignore_tabbed:
+                if re.search(r'^\s+', line):
+                    continue
+                ignore_tabbed = False
+
+            # Line -> relevant Container Class
+            obj = get_obj(line)
+            if obj is None:
+                if strict:
+                    raise ValueError("unrecognised line: '{line}'".format(line=line))
+                continue
+
+            # Parser state changes
             if isinstance(obj, Frame):
+                # Link Signals to Frames (based on parsing order)
                 frame_latest = obj
             elif isinstance(obj, Signal):
+                # Link Signals to Frames (based on parsing order)
                 obj.link_to_frame(frame_latest)
+            elif isinstance(obj, (NSLine, BSLine)):
+                ignore_tabbed = True
 
             obj_list.append(obj)
 
@@ -263,7 +279,7 @@ class NSLine(LineObject):
 
 
 @dbc_line
-class NSLine(LineObject):
+class BSLine(LineObject):
     """
     Line often appears at the beginning of a file. It's ignored.
 
