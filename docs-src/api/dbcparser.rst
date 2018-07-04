@@ -12,6 +12,14 @@ dbcparser\.parser module
     :undoc-members:
     :show-inheritance:
 
+dbcparser\.signal module
+------------------------
+
+.. automodule:: dbcparser.signal
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 
 Module contents
 ---------------

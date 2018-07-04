@@ -122,7 +122,7 @@ def dbc_line(cls):
 
 class DBCParser(StreamParser):
     def parse(self):
-        # DBC Lines to LineObject instances
+        # --------------- Lines to LineObject instances ---------------
         def get_obj(line):
             for cls in DBC_LINE_CLASSES:
                 obj = cls.from_line(line)
@@ -136,6 +136,9 @@ class DBCParser(StreamParser):
         for line in self.line_iter():
             obj = get_obj(line)
             if obj is None:
+                striped_line = line.rstrip()
+                if striped_line:
+                    print(striped_line)
                 continue
 
             # Link Signals to Frames (based on parsing order)
@@ -146,25 +149,31 @@ class DBCParser(StreamParser):
 
             obj_list.append(obj)
 
-        # Link everything together
+        # --------------- Linking ---------------
+        def class_objects(cls, cond=lambda o: True):
+            for obj in obj_list:
+                if isinstance(obj, cls) and cond(obj):
+                    yield obj
+
+        return obj_list
 
 
 class LineObject(object):
-    PARENT = None
-    REGEX = None  # overridden to be a: _sre.SRE_Pattern (return from re.compile)
-    TYPE_MAP = {}
+    _PARENT = None
+    _REGEX = None  # overridden to be a: _sre.SRE_Pattern (return from re.compile)
+    _TYPE_MAP = {}
 
     @classmethod
     def from_line(cls, line):
         """
         Builds an instance from the given line.
 
-        If the line does not match ``cls.REGEX``, ``None`` is returned.
+        If the line does not match ``cls._REGEX``, ``None`` is returned.
 
         :return: instance of this class, or None
         :rtype: ``cls``
         """
-        match = cls.REGEX.search(line)
+        match = cls._REGEX.search(line)
         if match:
             return cls(**match.groupdict())
         return None
@@ -178,7 +187,7 @@ class LineObject(object):
         """
         return {
             v: getattr(self, v)
-            for v in self.REGEX.groupindex.keys()
+            for v in self._REGEX.groupindex.keys()
         }
 
     def __init__(self, **kwargs):
@@ -186,7 +195,7 @@ class LineObject(object):
             if val is None:
                 setattr(self, key, None)
             else:
-                setattr(self, key, self.TYPE_MAP.get(key, str)(val))
+                setattr(self, key, self._TYPE_MAP.get(key, str)(val))
 
 
 # --- Types
@@ -239,12 +248,60 @@ def _t_flexible_val(value):
 
 
 @dbc_line
+class NSLine(LineObject):
+    """
+    Line often appears at the beginning of a file followed by lots of
+    single-world flags...
+
+    I haven't figured out a reason *not* to ignore them yet.
+
+    Example::
+
+        NS_:
+    """
+    _REGEX = re.compile(r'^NS_\s*:\s*$')
+
+
+@dbc_line
+class NSLine(LineObject):
+    """
+    Line often appears at the beginning of a file. It's ignored.
+
+    Example::
+
+        BS_:
+    """
+    _REGEX = re.compile(r'^BS_\s*:\s*$')
+
+
+@dbc_line
+class Version(LineObject):
+    """
+    DBC file 'version' text
+
+    Example(s)::
+
+        VERSION "created by canmatrix"
+    """
+    _REGEX = re.compile(r'''
+        ^VERSION\s*         # line start
+        "(?P<text>[^"]*)"   # vertsion text
+        \s*$                # line end
+    ''', re.VERBOSE)
+
+    _TYPE_MAP = {'text': str}
+
+
+@dbc_line
 class Frame(LineObject):
-    # Examples:
-    #   BO_ 2566903475 ConverterInputOutput: 8 DCDC
-    #   BO_ 1258 PDORx4_Inv1: 8 INV_1
-    #   BO_ 263 Batt107: 4 Vector__XXX
-    REGEX = re.compile(r'''
+    """
+    Example(s)::
+
+        BO_ 2566903475 ConverterInputOutput: 8 DCDC
+        BO_ 1258 PDORx4_Inv1: 8 INV_1
+        BO_ 263 Batt107: 4 Vector__XXX
+    """
+    _REGEX = re.compile(r'''
         ^BO_\s+                 # line start
         (?P<address>\d+)\s*     # address (decimal)
         (?P<name>\S+)\s*:\s*    # frame name
@@ -253,7 +310,7 @@ class Frame(LineObject):
         \s*$                    # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'address': int,
         'name': str,
         'dlc': int,
@@ -263,11 +320,15 @@ class Frame(LineObject):
 
 @dbc_line
 class Signal(LineObject):
-    # Examples:
-    #   SG_ Frequency_command : 23|16@0+ (0.1,0) [45|65] "Hz" ABC,DEF
-    #   SG_ CommandSetNVParam_MUX M  : 7|16@0- (1,0) [-32768|32767] "" Vector__XXX
-    #   SG_ Dummy m0  : 23|16@0+ (1,0) [0|65535] "" Vector__XXX
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        SG_ Frequency : 23|16@0+ (0.001,10) [10|75] "Hz" ABC,DEF
+        SG_ LotzaRange : 7|16@0- (1,0) [-32768|32767] "" Vector__XXX
+        SG_ KeyValue M : 3|3@1+ (1,0) [0|7] "" RxNode
+        SG_ Dummy m0 : 23|16@0+ (1,0) [0|65535] "" Vector__XXX
+    """
+    _REGEX = re.compile(r'''
         ^\s*SG_\s+                  # line start, can be tabbed in (fault tolerant)
         (?P<name>\S+)\s*            # signal name
         (?P<mux>(M|m\d+))?\s*:\s*   # frame multiplexing: M index, m1 signal where index is 1
@@ -288,7 +349,7 @@ class Signal(LineObject):
         \s*$                        # end of line
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'name': str,
         'mux': str,
         'start': int,
@@ -309,11 +370,14 @@ class Signal(LineObject):
 
 @dbc_line
 class SignalComment(LineObject):
-    # Examples:
-    #   CM_ SG_ 2164239169 SignalName "this is the comment";
-    #   CM_ SG_ 123 SignalName2 "this comment
-    #   extends over multiple lines";
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        CM_ SG_ 2164239169 SignalName "this is the comment";
+        CM_ SG_ 123 SignalName2 "this comment
+        extends over multiple lines";
+    """
+    _REGEX = re.compile(r'''
         ^CM_\s+SG_\s+           # line start
         (?P<address>\d+)\s+     # frame address
         (?P<name>\w+)\s*        # signal name
@@ -321,7 +385,7 @@ class SignalComment(LineObject):
         ;\s*$                   # end of line
     ''', re.MULTILINE | re.DOTALL | re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'address': int,
         'name': str,
         'comment': str,
@@ -330,18 +394,21 @@ class SignalComment(LineObject):
 
 @dbc_line
 class FrameComment(LineObject):
-    # Examples:
-    #   CM_ BO_ 2365573367  "Fault bits.";
-    #   CM_ BO_ 123  "multiline comment
-    #   spans multiple lines... go figure!";
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        CM_ BO_ 2365573367  "Fault bits.";
+        CM_ BO_ 123  "multiline comment
+        spans multiple lines... go figure!";
+    """
+    _REGEX = re.compile(r'''
         ^CM_\s+BO_\s+           # line start
         (?P<address>\d+)\s+     # frame address
         "(?P<comment>.*)"\s*    # comment
         ;\s*$                   # end of line
     ''', re.MULTILINE | re.DOTALL | re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'address': int,
         'comment': str,
     }
@@ -349,34 +416,40 @@ class FrameComment(LineObject):
 
 @dbc_line
 class NodeList(LineObject):
-    # Examples:
-    #   BU_ ABC DEF
-    #   BU_ Node1 INV_1 AUX
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        BU_ ABC DEF
+        BU_ Node1 INV_1 AUX
+    """
+    _REGEX = re.compile(r'''
         ^BU_\s*:\s*         # line start
         (?P<nodes>.*)\s*    # nodes list (space separated)
         $                   # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'nodes': _t_nodelist_space,
     }
 
 
 @dbc_line
 class NodeComment(LineObject):
-    # Example:
-    #   CM_ BU_ testBU "sender ECU";
-    #   CM_ BU_ NodeX "comment over
-    #   multiple lines";
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        CM_ BU_ testBU "sender ECU";
+        CM_ BU_ NodeX "comment over
+        multiple lines";
+    """
+    _REGEX = re.compile(r'''
         ^CM_\s+BU_\s+           # line start
         (?P<node>\S+)\s+        # node name
         "(?P<comment>.*)"\s*    # comment
         ;\s*$                   # line end
     ''', re.MULTILINE | re.DOTALL | re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'node': str,
         'comment': str,
     }
@@ -384,9 +457,12 @@ class NodeComment(LineObject):
 
 @dbc_line
 class Enumeration(LineObject):
-    # Example:
-    #   VAL_ 291 Signal 1 "one" 2 "two" 3 "three";
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        VAL_ 291 Signal 1 "one" 2 "two" 3 "three";
+    """
+    _REGEX = re.compile(r'''
         ^VAL_\s+            # line start
         (?P<address>\d+)\s+ # frame address
         (?P<signal>\S+)\s+  # signal name
@@ -397,7 +473,7 @@ class Enumeration(LineObject):
         ;\s*$               # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'address': int,
         'signal': str,
         'enums': _t_enum_list,
@@ -406,9 +482,12 @@ class Enumeration(LineObject):
 
 @dbc_line
 class ValueTable(LineObject):
-    # Example:
-    #   VAL_TABLE_ Baudrate 0 "125K" 1 "250K" 2 "500K" 3 "1M";
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        VAL_TABLE_ Baudrate 0 "125K" 1 "250K" 2 "500K" 3 "1M";
+    """
+    _REGEX = re.compile(r'''
         ^VAL_TABLE_\s+      # line start
         (?P<table>\S+)\s+   # table name
         (?P<enums>(
@@ -418,7 +497,7 @@ class ValueTable(LineObject):
         ;\s*$               # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'tble': str,
         'enums': _t_enum_list,
     }
@@ -427,9 +506,12 @@ class ValueTable(LineObject):
 # ----- Defines
 @dbc_line
 class GlobalDefine(LineObject):
-    # Examples:
-    #   BA_DEF_ "Thingy" INT 0 65535;
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        BA_DEF_ "Thingy" INT 0 65535;
+    """
+    _REGEX = re.compile(r'''
         ^BA_DEF_\s*             # line start
         "(?P<name>[^"]*)"\s*    # name
         (?P<type>\S+)           # type
@@ -437,7 +519,7 @@ class GlobalDefine(LineObject):
         ;\s*$                   # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'name': str,
     }
 
@@ -483,12 +565,15 @@ class GlobalDefine(LineObject):
 
 @dbc_line
 class SignalDefine(GlobalDefine):
-    # Examples:
-    #   BA_DEF_ SG_ "DisplayDecimalPlaces" INT 0 65535;
-    #   BA_DEF_ SG_ "GenSigStartValue" FLOAT -3.4E+038 3.4E+038;
-    #   BA_DEF_ SG_ "HexadecimalOutput" BOOL False True;
-    #   BA_DEF_ SG_ "LongName" STR;
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        BA_DEF_ SG_ "DisplayDecimalPlaces" INT 0 65535;
+        BA_DEF_ SG_ "GenSigStartValue" FLOAT -3.4E+038 3.4E+038;
+        BA_DEF_ SG_ "HexadecimalOutput" BOOL False True;
+        BA_DEF_ SG_ "LongName" STR;
+    """
+    _REGEX = re.compile(r'''
         ^BA_DEF_\s+SG_\s*       # line start
         "(?P<name>[^"]*)"\s*    # name
         (?P<type>\S+)           # type
@@ -499,10 +584,13 @@ class SignalDefine(GlobalDefine):
 
 @dbc_line
 class FrameDefine(GlobalDefine):
-    # Examples:
-    #   BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
-    #   BA_DEF_ BO_ "Receivable" BOOL False True;
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        BA_DEF_ BO_ "GenMsgCycleTime" INT 0 65535;
+        BA_DEF_ BO_ "Receivable" BOOL False True;
+    """
+    _REGEX = re.compile(r'''
         ^BA_DEF_\s+BO_\s*       # line start
         "(?P<name>[^"]*)"\s*    # name
         (?P<type>\S+)           # type
@@ -513,10 +601,13 @@ class FrameDefine(GlobalDefine):
 
 @dbc_line
 class NodeDefine(GlobalDefine):
-    # Examples:
-    #   BA_DEF_ BU_ "NWM-Knoten" ENUM  "nein","ja";
-    #   BA_DEF_ BU_ "NWM-Stationsadresse" HEX 0 63;
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        BA_DEF_ BU_ "NWM-Knoten" ENUM  "nein","ja";
+        BA_DEF_ BU_ "NWM-Stationsadresse" HEX 0 63;
+    """
+    _REGEX = re.compile(r'''
         ^BA_DEF_\s+BU_\s*       # line start
         "(?P<name>[^"]*)"\s*    # name
         (?P<type>\S+)           # type
@@ -528,14 +619,14 @@ class NodeDefine(GlobalDefine):
 # ----- Attributes
 @dbc_line
 class GlobalAttribute(LineObject):
-    REGEX = re.compile(r'''
+    _REGEX = re.compile(r'''
         ^BA_\s*                 # line start
         "(?P<name>[^"]*)"\s*    # name
         (?P<value>.*?)\s*       # value
         ;\s*$                   # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'name': str,
         'value': _t_flexible_val,
     }
@@ -543,11 +634,14 @@ class GlobalAttribute(LineObject):
 
 @dbc_line
 class SignalAttribute(LineObject):
-    # Examples:
-    #   BA_ "GenSigStartValue" SG_ 2365565505 V50to88pct 2000.0;
-    #   BA_ "GenSigStartValue" SG_ 123 Dummy 0.0;
-    #   BA_ "DisplayDecimalPlaces" SG_ 2634007031 ControlSwRev 2;
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        BA_ "GenSigStartValue" SG_ 2365565505 V50to88pct 2000.0;
+        BA_ "GenSigStartValue" SG_ 123 Dummy 0.0;
+        BA_ "DisplayDecimalPlaces" SG_ 2634007031 ControlSwRev 2;
+    """
+    _REGEX = re.compile(r'''
         ^BA_\s*                 # line start
         "(?P<name>[^"]*)"\s*    # name
         SG_\s+
@@ -557,7 +651,7 @@ class SignalAttribute(LineObject):
         ;\s*$                   # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'name': str,
         'address': int,
         'signal_name': str,
@@ -567,10 +661,13 @@ class SignalAttribute(LineObject):
 
 @dbc_line
 class FrameAttribute(LineObject):
-    # Examples:
-    #   BA_ "GenMsgSendType" BO_ 2164239169 1;
-    #   BA_ "GenMsgStartValue" BO_ 2164239169 "0000000000000000";
-    REGEX = re.compile(r'''
+    """
+    Examples::
+
+        BA_ "GenMsgSendType" BO_ 2164239169 1;
+        BA_ "GenMsgStartValue" BO_ 2164239169 "0000000000000000";
+    """
+    _REGEX = re.compile(r'''
         ^BA_\s*                 # line start
         "(?P<name>[^"]*)"\s*    # name
         BO_\s+
@@ -579,7 +676,7 @@ class FrameAttribute(LineObject):
         ;\s*$                   # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'name': str,
         'address': int,
         'value': _t_flexible_val,
@@ -588,9 +685,12 @@ class FrameAttribute(LineObject):
 
 @dbc_line
 class NodeAttribute(LineObject):
-    # Example(s):
-    #   BA_ "NetworkNode" BU_ testBU 273;
-    REGEX = re.compile(r'''
+    """
+    Example(s)::
+
+        BA_ "NetworkNode" BU_ testBU 273;
+    """
+    _REGEX = re.compile(r'''
         ^BA_\s*                 # line start
         "(?P<name>[^"]*)"\s*    # name
         BU_\s+
@@ -599,7 +699,7 @@ class NodeAttribute(LineObject):
         ;\s*$                   # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'name': str,
         'node_name': str,
         'value': _t_flexible_val,
@@ -609,17 +709,20 @@ class NodeAttribute(LineObject):
 # ----- Default Value
 @dbc_line
 class DefaultValue(LineObject):
-    # Example(s):
-    #   BA_DEF_DEF_ "GenMsgCycleTime" 65535;
-    #   BA_DEF_DEF_ "NetworkNode" 65535;
-    REGEX = re.compile(r'''
+    """
+    Example(s)::
+
+        BA_DEF_DEF_ "GenMsgCycleTime" 65535;
+        BA_DEF_DEF_ "NetworkNode" 65535;
+    """
+    _REGEX = re.compile(r'''
         ^BA_DEF_DEF_\s*         # line start
         "(?P<name>[^"]*)"\s*    # name
         (?P<value>.*?)\s*       # value
         ;\s*$                   # line end
     ''', re.VERBOSE)
 
-    TYPE_MAP = {
+    _TYPE_MAP = {
         'name': str,
         'value': _t_flexible_val,
     }
