@@ -67,9 +67,10 @@ class Signal(object):
 
     .. math::
 
-        phys = (raw \times factor) + offset
-
-        raw = \frac{phys - offset}{factor}
+        \begin{align}
+        phys & = \left(raw \times factor\right) + offset \\
+        raw & = \frac{phys - offset}{factor}
+        \end{align}
 
     *where:*
 
