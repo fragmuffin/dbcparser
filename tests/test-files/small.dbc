@@ -21,7 +21,7 @@ CM_ BO_ 291  "Multi
 
 CM_ SG_ 291 someTestSignal "Multi
  Line
- Signal comment with a-umlaut: �";
+ Signal comment with a-umlaut: Ä";
 
 CM_ BU_ testBU "sender ECU";
 CM_ BU_ recBU "receiver ECU";

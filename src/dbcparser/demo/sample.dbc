@@ -1,0 +1,53 @@
+VERSION "dbcparser sample file"
+
+NS_ :
+
+BS_:
+
+BU_: Ctrl SlaveA SlaveB StatusIndicator
+
+
+BO_ 123 Command: 3 Ctrl
+ SG_ index : 0|5@1+ (1,0) [0|31] "" SlaveA,SlaveB
+ SG_ command : 5|3@1+ (1,0) [0|7] "" SlaveA,SlaveB
+ SG_ data : 8|16@1+ (1,0) [0|65535] "" SlaveA,SlaveB
+
+BO_ 130 Response_A: 3 SlaveA
+ SG_ index : 0|5@1+ (1,0) [0|31] "" Ctrl
+ SG_ command : 5|3@1+ (1,0) [0|7] "" Ctrl
+ SG_ status : 8|3@1+ (1,0) [0|7] "" Ctrl
+
+BO_ 131 Response_B: 3 SlaveB
+ SG_ index : 0|5@1+ (1,0) [0|31] "" Ctrl
+ SG_ command : 5|3@1+ (1,0) [0|7] "" Ctrl
+ SG_ status : 8|3@1+ (1,0) [0|7] "" Ctrl
+
+BO_ 321 Status_A: 8 SlaveA
+ SG_ enabled : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ errorCode : 1|3@1+ (1,0) [0|7] "" StatusIndicator
+ SG_ voltage : 4|10@1+ (0.01,6.88) [6.88|17.12] "V" Vector__XXX
+ SG_ temp : 14|11@1- (0.1,55) [-47|1] "°C" Vector__XXX
+
+BO_ 322 Status_B: 8 SlaveB
+ SG_ enabled : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ errorCode : 1|3@1+ (1,0) [0|7] "" StatusIndicator
+ SG_ button1 : 8|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ button2 : 9|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ button3 : 10|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ button4 : 11|1@1+ (1,0) [0|1] "" Vector__XXX
+
+
+CM_ BU_ ECU_A "Controller node.
+It sends commands to indexed slave nodes.";
+CM_ BU_ SlaveA "Slave node, index = 0";
+CM_ BU_ SlaveB "Slave node, index = 1";
+CM_ BU_ StatusIndicator "Has a big red light on it that flashes when something's wrong";
+
+CM_ BO_ 123 "Command frame
+Transmit command to indexed ECU.
+That ECU should respond with the same index, command, and status return";
+
+CM_ SG_ 123 index "Index of ECU receiving this command";
+CM_ SG_ 123 command "Command";
+
+VAL_ 131 command 0 "nop" 1 "light_on" 2 "light_off" 3 "do_a_third_thing";

@@ -106,7 +106,7 @@ class Signal(object):
 
     *where:*
 
-    - :math:`raw` : value transmitted (as :class:`int`)
+    - :math:`raw` : value transmitted (as :class:`int`, signed or unsigned).
     - :math:`phys` : scaled & offset value in the signal's ``unit`` (as :class:`float`)
     """
     def __init__(self, name, startbit, length,
