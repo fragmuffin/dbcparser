@@ -10,5 +10,6 @@ UNRELEASED
 Alternative
 ============
 
-This project is abandoned (for now)\
-use [`eerimoq/cantools`](https://github.com/eerimoq/cantools) instead.
+This project is abandoned (for now)
+
+Use [`eerimoq/cantools`](https://github.com/eerimoq/cantools) instead.
